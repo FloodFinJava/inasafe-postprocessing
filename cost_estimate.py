@@ -11,6 +11,7 @@ import warnings
 import geopandas as gpd
 import pandas as pd
 import numpy as np
+import xarray as xr
 import toml
 
 CONF_FILE = "conf.toml"
@@ -179,7 +180,7 @@ class FinancialComputation(object):
             re_match = re.search('Q\d*', d)
             abspath = os.path.join(self.results_dir, d)
             if os.path.isdir(abspath) and re_match:
-                return_period = re_match.group()[1:]
+                return_period = int(re_match.group()[1:])
                 # Estimate losses for each scenario
                 styling_path = os.path.join(abspath,
                                             self.impact_styling_name)
@@ -196,17 +197,26 @@ class FinancialComputation(object):
                     loss_model_dict[return_period] = loss_model
         return loss_model_dict
 
-    def run(self):
+    def estimate_losses(self):
         """Iterate through all the scenario results and estimate damages and losses.
+        Keep a summary of losses and a xarray DataSet of all scenarios.
         """
-        losses_list = []
+        losses_per_area_list = []
+        loss_map_list = []
         for return_period, loss_model in self.loss_model_dict.items():
             loss_model.read_hazard_cats().damage_by_category()
             loss_model.estimate_building_value()
             loss_model.estimate_damage().estimate_losses()
+            ds_losses = loss_model.impacts_map.to_xarray()
+            ds_losses = ds_losses.expand_dims('T')
+            ds_losses.coords['T'] = [return_period]
+            # print(ds_losses)
+            loss_map_list.append(ds_losses)
+            # summary
             losses_by_area = loss_model.get_losses_by_area().rename(return_period)
-            losses_list.append(losses_by_area)
-        self.losses_summary = pd.concat(losses_list, axis='columns')
+            losses_per_area_list.append(losses_by_area)
+        self.losses_summary = pd.concat(losses_per_area_list, axis='columns')
+        self.losses_ds = xr.concat(loss_map_list, dim='T').sortby('T')
         return self
 
     def summary_to_csv(self):
@@ -216,7 +226,8 @@ class FinancialComputation(object):
 
 def main():
     financial_model = FinancialComputation(CONF_FILE)
-    financial_model.run()
+    financial_model.estimate_losses()
+    # print(financial_model.losses_summary.head())
     financial_model.summary_to_csv()
     return None
 
