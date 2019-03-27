@@ -1,0 +1,31 @@
+[input]
+base_path = '/home/laurent/Sync/FloodFinJava'
+asset_values = '/home/laurent/Sync/FloodFinJava/asset_values.csv'
+
+[input.impact]
+base_path = '/home/laurent/Sync/FloodFinJava/inasafe/scenarios/'
+## following are inasafe default ##
+impact_map_name = 'impact_analysis.geojson'
+# used to extract hazard category information
+impact_styling_name = 'impact_analysis.qml'
+# school, bank etc.
+col_exposure_class = 'exposure_class'
+# low, medium etc.
+col_hazard_class = 'hazard_class'
+col_agg_name = 'aggregation_name'
+# size in m2
+col_size = 'size'
+# boolean
+col_affected = 'affected'
+
+[input.loss_curves]
+path = 'loss curves Budiyono2015/vulnerability_all.csv'
+# column name
+default = 'commercial'
+# interpolation paramteters
+max_value = 20.0
+step = 0.01
+
+[output]
+file_name = "asset_losses.csv"
+
