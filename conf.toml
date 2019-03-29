@@ -12,6 +12,7 @@ impact_styling_name = 'impact_analysis.qml'
 col_exposure_class = 'exposure_class'
 # low, medium etc.
 col_hazard_class = 'hazard_class'
+col_hazard_id = 'hazard_id'
 col_agg_name = 'aggregation_name'
 # size in m2
 col_size = 'size'
@@ -26,6 +27,14 @@ default = 'commercial'
 max_value = 20.0
 step = 0.01
 
+[input.insurance]
+# Return period to estimate the economic capital
+rt_ec = 200
+# Return on economic capital
+rc = 0.02
+margin = 0.2
+
 [output]
-file_name = "asset_losses.csv"
+summary_file = "asset_losses.csv"
+summary_map = "financial_summary.gpkg"
 

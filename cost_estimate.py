@@ -28,8 +28,15 @@ class LossModel(object):
         self.impacts_map = gpd.read_file(impact_map_path)
         self.asset_values = pd.read_csv(conf['input']['asset_values'], index_col='class',squeeze=True)
         self.impact_hazard_class = conf['input']['impact']['col_hazard_class']
+        self.impact_hazard_id = conf['input']['impact']['col_hazard_id']
         self.impact_exposure_class = conf['input']['impact']['col_exposure_class']
         self.impact_agg_name = conf['input']['impact']['col_agg_name']
+        self.impact_affected = conf['input']['impact']['col_affected']
+        # Variables that change in T
+        self.impact_T_var = [self.impact_hazard_class,
+                             self.impact_hazard_id,
+                             self.impact_affected,
+                             'damages', 'exceed_loss']
         self.curve_max = conf['input']['loss_curves']['max_value']
         self.default_curve = conf['input']['loss_curves']['default']
         self.loss_curves = loss_curves
@@ -108,7 +115,7 @@ class LossModel(object):
     def estimate_losses(self):
         """Compute financial losses: damage ratio x building value.
         """
-        self.impacts_map['losses'] = self.impacts_map['damages'] * self.impacts_map['building_value']
+        self.impacts_map['exceed_loss'] = self.impacts_map['damages'] * self.impacts_map['building_value']
         return self
 
     def _compute_building_value(self, row, v_dict):
@@ -126,7 +133,7 @@ class LossModel(object):
 
     def get_losses_by_area(self):
         # Sum losses by aggregation area
-        return self.impacts_map.groupby(self.impact_agg_name)['losses'].sum()
+        return self.impacts_map.groupby(self.impact_agg_name)['exceed_loss'].sum()
 
 
 class FinancialComputation(object):
@@ -154,11 +161,19 @@ class FinancialComputation(object):
         # impact map
         self.impact_styling_name = self.conf['input']['impact']['impact_styling_name']
         self.impact_map_name = self.conf['input']['impact']['impact_map_name']
+        # Information about insurance premium calculation
+        self.insur_rt_ec = self.conf['input']['insurance']['rt_ec']
+        self.insur_rc = self.conf['input']['insurance']['rc']
+        self.insur_margin = self.conf['input']['insurance']['margin']
         # Summary of losses by aggregation
         self.losses_summary = None
-        # output
-        self.output_path = os.path.join(self.basepath,
-                            self.conf['output']['file_name'])
+        # Geographical summary
+        self.losses_ds = None
+        # Output
+        self.output_summary_path = os.path.join(self.basepath,
+                                                self.conf['output']['summary_file'])
+        self.output_summary_map_path = os.path.join(self.basepath,
+                                                self.conf['output']['summary_map'])
 
     def _read_vulnerability_curve(self):
         """Read curves from CSV.
@@ -208,25 +223,78 @@ class FinancialComputation(object):
             loss_model.estimate_building_value()
             loss_model.estimate_damage().estimate_losses()
             ds_losses = loss_model.impacts_map.to_xarray()
-            ds_losses = ds_losses.expand_dims('T')
+            # Only some variables vary in T
+            for var in loss_model.impact_T_var:
+                ds_losses[var] = ds_losses[var].expand_dims('T')
             ds_losses.coords['T'] = [return_period]
-            # print(ds_losses)
             loss_map_list.append(ds_losses)
             # summary
             losses_by_area = loss_model.get_losses_by_area().rename(return_period)
             losses_per_area_list.append(losses_by_area)
         self.losses_summary = pd.concat(losses_per_area_list, axis='columns')
-        self.losses_ds = xr.concat(loss_map_list, dim='T').sortby('T')
+        # Create the losses dataset
+        self.losses_ds = xr.concat(loss_map_list, dim='T', data_vars='minimal').sortby('T')
+        return self
+
+    def expected_losses(self):
+        """Transform exceedance probability to p(event).
+        Estimate the expected loss next year per building.
+        """
+        self.losses_ds['exceed_prob'] = 1 / self.losses_ds['T']
+        ds_list = []
+        # Loop accross buildings to do the sorting by loss
+        for building_idx in self.losses_ds['index']:
+            losses = self.losses_ds[['exceed_loss', 'exceed_prob']].sel(index=building_idx).sortby('exceed_loss')
+            losses = losses.expand_dims('index')
+            losses.coords['index'] = [building_idx]
+            # Event probability
+            p_event = -losses['exceed_prob'].diff(dim='T', label='lower')
+            p_event_last = losses['exceed_prob'].isel(T=-1)
+            ds = xr.concat([p_event, p_event_last], dim='T').rename('event_prob').to_dataset()
+            assert len(self.losses_ds['T']) == len(ds['T'])
+            # Event losses
+            ds['event_loss'] = losses['exceed_loss'] * ds['event_prob']
+            ds_list.append(ds)
+        losses_all = xr.concat(ds_list, dim='index')
+        self.losses_ds = xr.merge([self.losses_ds, losses_all])
+        self.losses_ds['expected_loss'] = losses_all['event_loss'].sum(dim='T')
+        return self
+
+    def insurance_premium(self):
+        """economic capital is the exceedance loss for a given return period.
+        """
+        ec = self.losses_ds['exceed_loss'].sel(T=self.insur_rt_ec)
+        self.losses_ds['economic_capital'] = ec
+        premium = (self.losses_ds['expected_loss'] + ec*self.insur_rc) * (1+self.insur_margin)
+        self.losses_ds['insurance_premium'] = premium
+        return self
+
+    def run(self):
+        self.estimate_losses().expected_losses().insurance_premium()
         return self
 
     def summary_to_csv(self):
-        self.losses_summary.to_csv(self.output_path, float_format='%.2f')
+        self.losses_summary.to_csv(self.output_summary_path, float_format='%.2f')
+        return self
+
+    def to_gpkg(self):
+        """Write to the disk a gpkg map of combined financials.
+        """
+        ds = self.losses_ds[['exposure_class', 'aggregation_name', 'size',
+                            'geometry', 'building_value', 'expected_loss',
+                            'economic_capital', 'insurance_premium']]
+        print(ds)
+        df = ds.to_dataframe()
+        gdf = gpd.GeoDataFrame(df, geometry='geometry')
+        print(gdf.head())
+        gdf.to_file(self.output_summary_map_path, driver='GPKG')
         return self
 
 
 def main():
     financial_model = FinancialComputation(CONF_FILE)
-    financial_model.estimate_losses()
+    financial_model.run()
+    financial_model.to_gpkg()
     # print(financial_model.losses_summary.head())
     financial_model.summary_to_csv()
     return None
