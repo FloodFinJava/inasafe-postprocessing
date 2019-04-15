@@ -1,9 +1,9 @@
 [input]
-base_path = '/home/laurent/Sync/FloodFinJava'
-asset_values = '/home/laurent/Sync/FloodFinJava/asset_values.csv'
+base_path = '../../'
+asset_values = '../../asset_values.csv'
 
 [input.impact]
-base_path = '/home/laurent/Sync/FloodFinJava/inasafe/scenarios/'
+base_path = '../../inasafe/scenarios/'
 ## following are inasafe default ##
 impact_map_name = 'impact_analysis.geojson'
 # used to extract hazard category information
