@@ -26,7 +26,7 @@ class LossModel(object):
         self.cat_ranges = {}
         self.styling = ElementTree.parse(styling_path).getroot()
         self.impacts_map = gpd.read_file(impact_map_path)
-        self.asset_values = pd.read_csv(conf['input']['asset_values'], index_col='class',squeeze=True)
+        self.asset_values = pd.read_csv(os.path.normpath(conf['input']['asset_values']), index_col='class',squeeze=True)
         self.impact_hazard_class = conf['input']['impact']['col_hazard_class']
         self.impact_hazard_id = conf['input']['impact']['col_hazard_id']
         self.impact_exposure_class = conf['input']['impact']['col_exposure_class']
@@ -151,11 +151,11 @@ class FinancialComputation(object):
         """Load configuration data from the toml conf file
         """
 
-        self.basepath = self.conf['input']['base_path']
-        self.results_dir = self.conf['input']['impact']['base_path']
+        self.basepath = os.path.normpath(self.conf['input']['base_path'])
+        self.results_dir = os.path.normpath(self.conf['input']['impact']['base_path'])
         # depth-damage curves
-        self.loss_curves_path = os.path.join(self.basepath,
-                            self.conf['input']['loss_curves']['path'])
+        self.loss_curves_path = os.path.normpath(os.path.join(self.basepath,
+                                                              self.conf['input']['loss_curves']['path']))
         self.curve_max = self.conf['input']['loss_curves']['max_value']
         self.curve_resol = self.conf['input']['loss_curves']['step']
         # impact map
@@ -193,14 +193,14 @@ class FinancialComputation(object):
         for d in os.listdir(self.results_dir):
             # Infer return period in years
             re_match = re.search('Q\d*', d)
-            abspath = os.path.join(self.results_dir, d)
+            abspath = os.path.normpath(os.path.join(self.results_dir, d))
             if os.path.isdir(abspath) and re_match:
                 return_period = int(re_match.group()[1:])
                 # Estimate losses for each scenario
-                styling_path = os.path.join(abspath,
-                                            self.impact_styling_name)
-                impact_map_path = os.path.join(abspath,
-                                               self.impact_map_name)
+                styling_path = os.path.normpath(os.path.join(abspath,
+                                                             self.impact_styling_name))
+                impact_map_path = os.path.normpath(os.path.join(abspath,
+                                                                self.impact_map_name))
                 try:
                     loss_model = LossModel(self.conf, self.loss_curves,
                                            styling_path, impact_map_path)
@@ -283,10 +283,10 @@ class FinancialComputation(object):
         ds = self.losses_ds[['exposure_class', 'aggregation_name', 'size',
                             'geometry', 'building_value', 'expected_loss',
                             'economic_capital', 'insurance_premium']]
-        print(ds)
+        # print(ds)
         df = ds.to_dataframe()
         gdf = gpd.GeoDataFrame(df, geometry='geometry')
-        print(gdf.head())
+        # print(gdf.head())
         gdf.to_file(self.output_summary_map_path, driver='GPKG')
         return self
 
