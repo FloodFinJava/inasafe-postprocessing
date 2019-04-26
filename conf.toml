@@ -1,8 +1,11 @@
 [input]
+# Base for output and input.loss_curves.path
 base_path = '../../'
+# Building value per square metre for each category
 asset_values = '../../asset_values.csv'
 
 [input.impact]
+# Where InaSAFE scenarios results are located
 base_path = '../../inasafe/scenarios/'
 ## following are inasafe default ##
 impact_map_name = 'impact_analysis.geojson'
@@ -20,10 +23,11 @@ col_size = 'size'
 col_affected = 'affected'
 
 [input.loss_curves]
+# Path to CSV loss curve. Relative to input.base_path
 path = 'loss curves Budiyono2015/vulnerability_all.csv'
 # column name
 default = 'commercial'
-# interpolation paramteters
+# interpolation parameteters
 max_value = 20.0
 step = 0.01
 
@@ -35,6 +39,7 @@ rc = 0.02
 margin = 0.2
 
 [output]
+# Relative to input.base_path
 summary_file = "asset_losses.csv"
 summary_map = "financial_summary.gpkg"
 
